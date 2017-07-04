@@ -56,7 +56,31 @@ helpers.load_or_unzip(function(data) {
     return all
   }
 
-  //
+  const reduceHypernyms = (stopList, words, currentId) => {
+     let newWords = [].concat(words);
+     var res = lookup(currentId).forEach(function(syn) {
+         syn.relationships.type_of.forEach(function(id) {
+             const hypernym = lookup(id)[0];
+
+             if (stopList.includes(hypernym.id.split('.')[0])) {
+                 return;
+             }
+
+             newWords = newWords.concat(hypernym.words);
+             const hypernymWords = getHypernyms([hypernym.id], stopList);
+             newWords = newWords.concat(hypernymWords);
+         });
+     });
+     return newWords;
+  };
+
+  const getHypernyms = (ids, stopList) => {
+    const hypernyms = ids.reduce(reduceHypernyms.bind(null, stopList), []) || [];
+    return hypernyms.filter((hypernym, index) => {
+        return hypernyms.indexOf(hypernym) === index;
+    });
+  };
+    //
   //begin API now
   exports.lookup = lookup
   exports.data = data
@@ -75,10 +99,35 @@ helpers.load_or_unzip(function(data) {
     return lookup(s, "noun")
   }
 
-  exports.synonyms = function(s) {
-    return lookup(s, "adjective").map(function(syn) {
-      let loose = syn.similar.map(function(id) {
-        return lookup(id, "adjective")[0].words
+  exports.getContextualIds = function(s, pos, relatedTerms = []) {
+      const synonyms = exports.synonyms(s, pos);
+      const hypernyms = exports.hypernyms(s, pos);
+
+      const lexicalFields = synonyms.map((synset, index) => [].concat(synset.close, synset.far, hypernyms[index].hypernyms));
+
+      return lookup(s, pos).filter((synset, index) => relatedTerms.some(term => {
+          console.log(relatedTerms, lexicalFields[index]);
+          return lexicalFields[index].includes(term)
+        }))
+        .map(synset => synset.id);
+  };
+
+  exports.hypernyms = function(s, pos, stopList = []) {
+    return lookup(s, pos).map(function(syn) {
+        let loose = syn.similar && syn.similar.map(function(id) {
+            return lookup(id, pos)[0].words
+        })
+        return {
+            synset: syn.id,
+            hypernyms: getHypernyms([syn.id], stopList)
+        }
+    });
+  };
+
+  exports.synonyms = function(s, pos) {
+    return lookup(s, pos).map(function(syn) {
+      let loose = syn.similar && syn.similar.map(function(id) {
+        return lookup(id, pos)[0].words
       })
       return {
         synset: syn.id,
