@@ -116,18 +116,16 @@ helpers.load_or_unzip(function(data) {
     return lookup(s, "noun")
   }
 
-  exports.getContextualIds = function(s, pos, relatedTerms = [], stopList = [], fallbackToFirst = true) {
+  exports.getContextualIds = function(s, pos, relatedTerms = [], lexicalFields = [], fallbackToFirst = true) {
+      const contextualTerms = relatedTerms.filter(term => term !== s);
+
       const synsets = lookup(s, pos);
 
-      if (!relatedTerms.length) {
+      if (!contextualTerms.length) {
           return getIdsOfMostCommonMeaning(s, synsets);
       }
-      const synonyms = exports.synonyms(s, pos);
-      const hypernyms = exports.hypernyms(s, pos, stopList);
 
-      const lexicalFields = synonyms.map((synset, index) => [].concat(synset.close, synset.far, hypernyms[index].hypernyms));
-
-      const contextualIds = synsets.filter((synset, index) => relatedTerms.some(term => {
+      const contextualIds = synsets.filter((synset, index) => contextualTerms.some(term => {
           return lexicalFields[index].includes(term)
         }))
         .map(synset => synset.id);
