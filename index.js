@@ -129,15 +129,35 @@ helpers.load_or_unzip(function(data) {
   };
 
 
+  const isWordMatchingSomeIds = (s, synsets, wordCounter) => {
+      return synsets.some(synset => {
+          const parts = synset.id.split('.');
+          return synsets.some(syn => parts[0] === s && parts[2] === wordCounter);
+      });
+  };
+
   const getIdsOfMostCommonMeaning = (s, synsets) => {
-      return synsets.filter(synset => {
-        var parts = synset.id.split('.');
+      return synsets.filter((synset, index) => {
+        const parts = synset.id.split('.');
+
         if (s === synset.id) {
           return true;
         }
-        return parts[0] === s && parts[2] === '01';
+
+        for (let i = 1; i <=20; i++) {
+            let wordCounter = '' + i;
+            if (wordCounter.length === 1) {
+                wordCounter = '0' + wordCounter;
+            }
+            if (isWordMatchingSomeIds(s, synsets, wordCounter)) {
+                return parts[0] === s && parts[2] === wordCounter;
+            }
+        }
+
+        return index === 0;
       })
       .map(synset => synset.id);
+
   };
 
     //
