@@ -20,6 +20,26 @@ helpers.load_or_unzip(function(data) {
     return founds
   }
 
+  let fast_hyponym_search = function(str, k) {
+      if (k !== 'noun') {
+        return [];
+      }
+      let founds = []
+      let l = data[k].length;
+      for (let i = 0; i < l; i++) {
+          if (!data[k][i].relationships.type_of) {
+            continue;
+          }
+          for (let o = 0; o < data[k][i].relationships.type_of.length; o++) {
+              if (data[k][i].relationships.type_of[o] === str) {
+                  founds.push(data[k][i])
+                  break
+              }
+          }
+      }
+      return founds
+  }
+
   let is_id = function(str) {
     return str.match(/[a-z]\.(adjective|verb|noun|adverb)\.[0-9]/i) !== null
   }
@@ -56,6 +76,18 @@ helpers.load_or_unzip(function(data) {
     return all
   }
 
+  const reduceHyponyms = (words, currentId) => {
+      let newWords = [].concat(words);
+      var res = lookup(currentId).forEach(function(syn) {
+          fast_hyponym_search(syn.id, syn.id.split('.')[1]).forEach(function(hyponym) {
+              newWords = newWords.concat(hyponym.words);
+              const hyponymWords = getHyponyms([hyponym.id]);
+              newWords = newWords.concat(hyponymWords);
+          });
+      });
+      return newWords;
+  };
+
   const reduceHypernyms = (stopList, words, currentId) => {
      let newWords = [].concat(words);
      var res = lookup(currentId).forEach(function(syn) {
@@ -66,9 +98,9 @@ helpers.load_or_unzip(function(data) {
                return;
              }
 
-             if (words.includes(hypernym.id.split('.')[0])) {
+             /* if (words.includes(hypernym.id.split('.')[0])) {
                  return;                       // check if this is not too harsh
-             }
+             } */
 
              newWords = newWords.concat(hypernym.words);
              const hypernymWords = getHypernyms([hypernym.id], stopList);
@@ -76,6 +108,13 @@ helpers.load_or_unzip(function(data) {
          });
      });
      return newWords;
+  };
+
+  const getHyponyms = (ids) => {
+      const hyponyms = ids.reduce(reduceHyponyms.bind(null), []) || [];
+      return hyponyms.filter((hypernym, index) => {
+          return hyponyms.indexOf(hypernym) === index;
+      });
   };
 
   const getHypernyms = (ids, stopList) => {
@@ -135,6 +174,16 @@ helpers.load_or_unzip(function(data) {
       }
 
       return contextualIds;
+  };
+
+
+  exports.hyponyms = function(s, pos, stopList = []) {
+      return lookup(s, pos).map(function(syn) {
+          return {
+              synset: syn.id,
+              hyponyms: getHyponyms([syn.id])
+          }
+      });
   };
 
   exports.hypernyms = function(s, pos, stopList = []) {
