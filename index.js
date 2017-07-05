@@ -20,7 +20,7 @@ helpers.load_or_unzip(function(data) {
     return founds
   }
 
-  let fast_hyponym_search = function(str, k) {
+  const fast_hyponym_search = function(str, k) {
       if (k !== 'noun') {
         return [];
       }
@@ -32,13 +32,13 @@ helpers.load_or_unzip(function(data) {
           }
           for (let o = 0; o < data[k][i].relationships.type_of.length; o++) {
               if (data[k][i].relationships.type_of[o] === str) {
-                  founds.push(data[k][i])
-                  break
+                  founds.push(data[k][i]);
+                  continue;
               }
           }
       }
       return founds
-  }
+  };
 
   let is_id = function(str) {
     return str.match(/[a-z]\.(adjective|verb|noun|adverb)\.[0-9]/i) !== null
@@ -76,12 +76,16 @@ helpers.load_or_unzip(function(data) {
     return all
   }
 
-  const reduceHyponyms = (words, currentId) => {
+  const reduceHyponyms = (limit, callCount, words, currentId) => {
       let newWords = [].concat(words);
       var res = lookup(currentId).forEach(function(syn) {
           fast_hyponym_search(syn.id, syn.id.split('.')[1]).forEach(function(hyponym) {
               newWords = newWords.concat(hyponym.words);
-              const hyponymWords = getHyponyms([hyponym.id]);
+              if (limit >= 0 && callCount >= limit) {
+                return;
+              }
+
+              const hyponymWords = getHyponyms([hyponym.id], limit, callCount+1);
               newWords = newWords.concat(hyponymWords);
           });
       });
@@ -110,8 +114,8 @@ helpers.load_or_unzip(function(data) {
      return newWords;
   };
 
-  const getHyponyms = (ids) => {
-      const hyponyms = ids.reduce(reduceHyponyms.bind(null), []) || [];
+  const getHyponyms = (ids, limit = -1, callCount = 1) => {
+      const hyponyms = ids.reduce(reduceHyponyms.bind(null, limit, callCount), []) || [];
       return hyponyms.filter((hypernym, index) => {
           return hyponyms.indexOf(hypernym) === index;
       });
@@ -177,11 +181,11 @@ helpers.load_or_unzip(function(data) {
   };
 
 
-  exports.hyponyms = function(s, pos, stopList = []) {
+  exports.hyponyms = function(s, pos, limit = -1) {
       return lookup(s, pos).map(function(syn) {
           return {
               synset: syn.id,
-              hyponyms: getHyponyms([syn.id])
+              hyponyms: getHyponyms([syn.id], limit)
           }
       });
   };
