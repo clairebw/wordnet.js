@@ -63,7 +63,11 @@ helpers.load_or_unzip(function(data) {
              const hypernym = lookup(id)[0];
 
              if (stopList.includes(hypernym.id.split('.')[0])) {
-                 return;
+               return;
+             }
+
+             if (words.includes(hypernym.id.split('.')[0])) {
+                 return;                       // check if this is not too harsh
              }
 
              newWords = newWords.concat(hypernym.words);
@@ -80,6 +84,19 @@ helpers.load_or_unzip(function(data) {
         return hypernyms.indexOf(hypernym) === index;
     });
   };
+
+
+  const getIdsOfMostCommonMeaning = (s, synsets) => {
+      return synsets.filter(synset => {
+        var parts = synset.id.split('.');
+        if (s === synset.id) {
+          return true;
+        }
+        return parts[0] === s && parts[2] === '01';
+      })
+      .map(synset => synset.id);
+  };
+
     //
   //begin API now
   exports.lookup = lookup
@@ -99,23 +116,31 @@ helpers.load_or_unzip(function(data) {
     return lookup(s, "noun")
   }
 
-  exports.getContextualIds = function(s, pos, relatedTerms = []) {
+  exports.getContextualIds = function(s, pos, relatedTerms = [], stopList = [], fallbackToFirst = true) {
+      const synsets = lookup(s, pos);
+
+      if (!relatedTerms.length) {
+          return getIdsOfMostCommonMeaning(s, synsets);
+      }
       const synonyms = exports.synonyms(s, pos);
-      const hypernyms = exports.hypernyms(s, pos);
+      const hypernyms = exports.hypernyms(s, pos, stopList);
 
       const lexicalFields = synonyms.map((synset, index) => [].concat(synset.close, synset.far, hypernyms[index].hypernyms));
 
-      return lookup(s, pos).filter((synset, index) => relatedTerms.some(term => {
+      const contextualIds = synsets.filter((synset, index) => relatedTerms.some(term => {
           return lexicalFields[index].includes(term)
         }))
         .map(synset => synset.id);
+
+      if (!contextualIds.length && fallbackToFirst) {
+          return getIdsOfMostCommonMeaning(s, synsets);
+      }
+
+      return contextualIds;
   };
 
   exports.hypernyms = function(s, pos, stopList = []) {
     return lookup(s, pos).map(function(syn) {
-        let loose = syn.similar && syn.similar.map(function(id) {
-            return lookup(id, pos)[0].words
-        })
         return {
             synset: syn.id,
             hypernyms: getHypernyms([syn.id], stopList)
