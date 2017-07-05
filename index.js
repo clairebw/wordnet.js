@@ -106,7 +106,6 @@ helpers.load_or_unzip(function(data) {
       const lexicalFields = synonyms.map((synset, index) => [].concat(synset.close, synset.far, hypernyms[index].hypernyms));
 
       return lookup(s, pos).filter((synset, index) => relatedTerms.some(term => {
-          console.log(relatedTerms, lexicalFields[index]);
           return lexicalFields[index].includes(term)
         }))
         .map(synset => synset.id);
