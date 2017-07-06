@@ -20,6 +20,26 @@ helpers.load_or_unzip(function(data) {
     return founds
   }
 
+  const fast_holonym_search = function(str, k) {
+    if (k !== 'noun') {
+        return [];
+    }
+    let founds = []
+    let l = data[k].length;
+    for (let i = 0; i < l; i++) {
+        if (!data[k][i].relationships.members) {
+            continue;
+        }
+        for (let o = 0; o < data[k][i].relationships.members.length; o++) {
+            if (data[k][i].relationships.members[o] === str) {
+                founds.push(data[k][i]);
+                continue;
+            }
+        }
+    }
+    return founds
+  };
+
   const fast_hyponym_search = function(str, k) {
       if (k !== 'noun') {
         return [];
@@ -76,23 +96,61 @@ helpers.load_or_unzip(function(data) {
     return all
   }
 
-  const reduceHyponyms = (limit, callCount, words, currentId) => {
-      let newWords = [].concat(words);
-      var res = lookup(currentId).forEach(function(syn) {
-          fast_hyponym_search(syn.id, syn.id.split('.')[1]).forEach(function(hyponym) {
-              newWords = newWords.concat(hyponym.words);
-              if (limit >= 0 && callCount >= limit) {
-                return;
-              }
+  const reduceMeronyms = (limit, callCount, stopList, words, currentId) => {
+    let newWords = [].concat(words);
+    var res = lookup(currentId).forEach(function(syn) {
+        syn.relationships.members.forEach(function(id) {
+            const meronym = lookup(id)[0];
 
-              const hyponymWords = getHyponyms([hyponym.id], limit, callCount+1);
-              newWords = newWords.concat(hyponymWords);
-          });
-      });
-      return newWords;
+            if (stopList.includes(meronym.id.split('.')[0])) {
+                return;
+            }
+
+            newWords = newWords.concat(meronym.words);
+
+            if (limit >= 0 && callCount >= limit) {
+                return;
+            }
+            const meronymWords = getWords(reduceHypernyms, [meronym.id], limit, callCount + 1, stopList);
+            newWords = newWords.concat(meronymWords);
+        });
+    });
+    return newWords;
   };
 
-  const reduceHypernyms = (stopList, words, currentId) => {
+  const reduceHolonyms = (limit, callCount, stopList, words, currentId) => {
+    let newWords = [].concat(words);
+    var res = lookup(currentId).forEach(function(syn) {
+        fast_holonym_search(syn.id, syn.id.split('.')[1]).forEach(function(hyponym) {
+            newWords = newWords.concat(hyponym.words);
+            if (limit >= 0 && callCount >= limit) {
+                return;
+            }
+
+            const holonymWords = getWords(reduceHolonyms, [hyponym.id], limit, callCount+1);
+            newWords = newWords.concat(holonymWords);
+        });
+    });
+    return newWords;
+  };
+
+  const reduceHyponyms = (limit, callCount, stopList, words, currentId) => {
+    let newWords = [].concat(words);
+    var res = lookup(currentId).forEach(function(syn) {
+      fast_hyponym_search(syn.id, syn.id.split('.')[1]).forEach(function(hyponym) {
+          newWords = newWords.concat(hyponym.words);
+          if (limit >= 0 && callCount >= limit) {
+            return;
+          }
+
+          const hyponymWords = getWords(reduceHyponyms, [hyponym.id], limit, callCount+1);
+          newWords = newWords.concat(hyponymWords);
+      });
+    });
+return newWords;
+  };
+
+  const reduceHypernyms = (limit, callCount, stopList, words, currentId) => {
      let newWords = [].concat(words);
      var res = lookup(currentId).forEach(function(syn) {
          syn.relationships.type_of.forEach(function(id) {
@@ -102,27 +160,20 @@ helpers.load_or_unzip(function(data) {
                return;
              }
 
-             /* if (words.includes(hypernym.id.split('.')[0])) {
-                 return;                       // check if this is not too harsh
-             } */
-
              newWords = newWords.concat(hypernym.words);
-             const hypernymWords = getHypernyms([hypernym.id], stopList);
+
+             if (limit >= 0 && callCount >= limit) {
+                 return;
+             }
+             const hypernymWords = getWords(reduceHypernyms, [hypernym.id], limit, callCount + 1, stopList);
              newWords = newWords.concat(hypernymWords);
          });
      });
      return newWords;
   };
 
-  const getHyponyms = (ids, limit = -1, callCount = 1) => {
-      const hyponyms = ids.reduce(reduceHyponyms.bind(null, limit, callCount), []) || [];
-      return hyponyms.filter((hypernym, index) => {
-          return hyponyms.indexOf(hypernym) === index;
-      });
-  };
-
-  const getHypernyms = (ids, stopList) => {
-    const hypernyms = ids.reduce(reduceHypernyms.bind(null, stopList), []) || [];
+  const getWords = (reduceFunction, ids, limit = -1, callCount = 1, stopList = []) => {
+    const hypernyms = ids.reduce(reduceFunction.bind(null, limit, callCount, stopList), []) || [];
     return hypernyms.filter((hypernym, index) => {
         return hypernyms.indexOf(hypernym) === index;
     });
@@ -179,17 +230,90 @@ helpers.load_or_unzip(function(data) {
     return lookup(s, "noun")
   }
 
-  exports.getContextualIds = function(s, pos, relatedTerms = [], lexicalFields = [], fallbackToFirst = true) {
-      const contextualTerms = relatedTerms.filter(term => term !== s);
+  exports.getContextualIds = function(s, pos, relatedTerms = [], options = {}) {
+      const fallbackToFirst = options.fallbackToFirst === undefined ? true : options.fallbackToFirst;
+      const includeDescription = options.includeDescription === undefined ? true : options.includeDescription;
+      const includeSynonyms = options.includeSynonyms === undefined ? true : options.includeSynonyms;
+      const includeHypernyms = options.includeHypernyms === undefined ? true : options.includeHypernyms;
+      const includeHyponyms = options.includeHyponyms === undefined ? true : options.includeHyponyms;
+      const includeHolonyms = options.includeHolonyms === undefined ? true : options.includeHolonyms;
+      const includeMeronyms = options.includeMeronyms === undefined ? true : options.includeMeronyms;
 
-      const synsets = lookup(s, pos);
+
+      let synsets = lookup(s, pos).map(synset => {
+          synset.lexicalField = [];
+          return synset;
+      });
+
+      if (includeDescription) {
+          synsets = synsets.map(synset => {
+              synset.lexicalField = synset.lexicalField.concat(synset.description.split(' '));
+              return synset;
+          });
+      }
+
+      if (includeSynonyms) {
+          synsets = synsets.map(synset => {
+              const synonyms = exports.synonyms(synset.id, 'noun');
+              if (synonyms.length) {
+                  synset.lexicalField = synset.lexicalField.concat(synonyms[0].close, synonyms[0].far);
+              }
+              return synset;
+          });
+      }
+
+      if (includeHypernyms) {
+          synsets = synsets.map(synset => {
+              const hypernyms = exports.hypernyms(synset.id, 'noun', [], 1);
+              if (hypernyms.length) {
+                  synset.lexicalField = synset.lexicalField.concat(hypernyms[0].hypernyms);
+              }
+              //console.log(hypernyms);
+              return synset;
+          });
+      }
+
+      if (includeHyponyms) {
+          synsets = synsets.map(synset => {
+              const hyponyms = exports.hyponyms(synset.id, 'noun', 1);
+              if (hyponyms.length) {
+                  synset.lexicalField = synset.lexicalField.concat(hyponyms[0].hyponyms);
+              }
+              //console.log(hyponyms);
+              return synset;
+          });
+      }
+
+      if (includeHolonyms) {
+          synsets = synsets.map(synset => {
+              const holonyms = exports.holonyms(synset.id, 'noun', 1);
+              if (holonyms.length) {
+                  synset.lexicalField = synset.lexicalField.concat(holonyms[0].holonyms);
+              }
+              // console.log(holonyms);
+              return synset;
+          });
+      }
+
+      if (includeMeronyms) {
+          synsets = synsets.map(synset => {
+              const meronyms = exports.meronyms(synset.id, 'noun', 1);
+              if (meronyms.length) {
+                  synset.lexicalField = synset.lexicalField.concat(meronyms[0].meronyms);
+              }
+              // console.log(meronyms);
+              return synset;
+          });
+      }
+
+      const contextualTerms = relatedTerms.filter(term => term !== s);
 
       if (!contextualTerms.length) {
           return getIdsOfMostCommonMeaning(s, synsets);
       }
 
       const contextualIds = synsets.filter((synset, index) => contextualTerms.some(term => {
-          return lexicalFields[index].includes(term)
+          return synset.lexicalField.includes(term)
         }))
         .map(synset => synset.id);
 
@@ -197,26 +321,37 @@ helpers.load_or_unzip(function(data) {
           return getIdsOfMostCommonMeaning(s, synsets);
       }
 
+      // console.log(contextualIds);
       return contextualIds;
   };
 
 
-  exports.hyponyms = function(s, pos, limit = -1) {
-      return lookup(s, pos).map(function(syn) {
-          return {
-              synset: syn.id,
-              hyponyms: getHyponyms([syn.id], limit)
-          }
-      });
+  exports.meronyms = function(s, pos, limit = -1) {
+    return lookup(s, pos).map(syn => ({
+        synset: syn.id,
+        meronyms: getWords(reduceMeronyms,[syn.id], limit)
+    }));
   };
 
-  exports.hypernyms = function(s, pos, stopList = []) {
-    return lookup(s, pos).map(function(syn) {
-        return {
-            synset: syn.id,
-            hypernyms: getHypernyms([syn.id], stopList)
-        }
-    });
+  exports.holonyms = function(s, pos, limit = -1) {
+    return lookup(s, pos).map(syn => ({
+        synset: syn.id,
+        holonyms: getWords(reduceHolonyms,[syn.id], limit)
+    }));
+  };
+
+  exports.hyponyms = function(s, pos, limit = -1, callCount = 1) {
+      return lookup(s, pos).map(syn => ({
+          synset: syn.id,
+          hyponyms: getWords(reduceHyponyms, [syn.id], limit, callCount)
+      }));
+  };
+
+  exports.hypernyms = function(s, pos, stopList = [], limit = -1, callCount = 1) {
+    return lookup(s, pos).map(syn => ({
+        synset: syn.id,
+        hypernyms: getWords(reduceHypernyms, [syn.id], limit, callCount, stopList)
+    }));
   };
 
   exports.synonyms = function(s, pos) {
