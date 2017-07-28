@@ -317,6 +317,19 @@ return newWords;
         }))
         .map(synset => synset.id);
 
+      /*
+      const contextualIds = synsets.map((synset, index) => {
+          synset.score = contextualTerms.filter(term => {
+              return synset.lexicalField.includes(term)
+          }).length;
+          console.log(synset.id, synset.score);
+          return synset;
+      })
+      .sort((a, b) => a.score - b.score)
+      .filter((synset, index) => index === 0)
+      .map(synset => synset.id);
+      */
+
       if (!contextualIds.length && fallbackToFirst) {
           return getIdsOfMostCommonMeaning(s, synsets);
       }
